@@ -1,0 +1,50 @@
+---
+
+- name: Effort to maintain credential of BaaS worker servers
+  hosts: stg_baas-workers_grp
+  gather_facts: "no"
+  vars_files:
+    - "group_vars/prod-workers"
+  pre_tasks:
+    - assert:
+        that:
+          - "usernames is defined"
+  tasks:
+
+    - name: read the baas_users file
+      shell: "cat /root/baas/baas_users"
+      register: ulist
+      delegate_to: 127.0.0.1
+
+    - name: Input usernames to baas files
+      local_action: lineinfile line="{{ item }}" dest="/root/baas/baas_users" backup=yes
+      with_items: "{{ usernames.strip().replace(' ', '').replace(',', '\n').split('\n') }}"
+      when: usernames not in ulist.stdout
+
+    - copy:
+        src: /usr/lib/python2.7/site-packages/ansible/modules/custom_modules/gen_pass.py
+        dest: /root/baas/gen_pass.py
+        backup: yes
+      delegate_to: 127.0.0.1
+      tags: access
+
+    - name: Creating prod_users password file
+      command: /usr/bin/python /root/baas/gen_pass.py
+      delegate_to: 127.0.0.1
+      tags: access
+
+    - name: check prod user file exists and not empty
+      stat:
+        path: /root/baas/prod_users
+      register: file_details
+      delegate_to: 127.0.0.1
+      tags: access
+
+    - name: including roles
+      include_role:
+        name: workers
+      when: file_details.stat.size != 0
+
+    - name: including roles
+      include_role:
+        name: common_infra
